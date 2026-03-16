@@ -21,7 +21,7 @@ async function loadUsageWithAuth(
 }
 
 describe("provider-usage.load", () => {
-  it("loads snapshots for copilot gemini codex and xiaomi", { timeout: 180_000 }, async () => {
+  it("loads snapshots for copilot gemini codex and xiaomi", async () => {
     const mockFetch = createProviderUsageFetch(async (url) => {
       if (url.includes("api.github.com/copilot_internal/user")) {
         return makeResponse(200, {
@@ -81,7 +81,7 @@ describe("provider-usage.load", () => {
     expect(summary.providers.find((provider) => provider.provider === "xiaomi")?.windows).toEqual(
       [],
     );
-  });
+  }, 180_000);
 
   it("returns empty provider list when auth resolves to none", async () => {
     const mockFetch = createProviderUsageFetch(async () => makeResponse(404, "not found"));
