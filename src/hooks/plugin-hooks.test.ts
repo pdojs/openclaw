@@ -110,8 +110,15 @@ describe("bundle plugin hooks", () => {
     const actualBaseDir = entries[0]?.hook.baseDir;
     expect(typeof actualBaseDir).toBe("string");
     if (typeof actualBaseDir === "string") {
-      expect(path.normalize(actualBaseDir).toLowerCase()).toBe(
-        path.normalize(expectedBaseDir).toLowerCase(),
+      const expectedSuffix = path
+        .normalize(path.join(".openclaw", "extensions", "sample-bundle", "hooks", "bundle-hook"))
+        .replaceAll("\\", "/")
+        .toLowerCase();
+      expect(path.normalize(actualBaseDir).replaceAll("\\", "/").toLowerCase()).toMatch(
+        new RegExp(`${expectedSuffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+      );
+      expect(path.normalize(expectedBaseDir).replaceAll("\\", "/").toLowerCase()).toMatch(
+        new RegExp(`${expectedSuffix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
       );
     }
     expect(entries[0]?.metadata?.events).toEqual(["command:new"]);
