@@ -45,7 +45,11 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
+import { emitZkAuditEvent } from "../infra/zk-audit-events.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { AccessProof } from "./zk-agent-trust.js";
+
+const log = createSubsystemLogger("zk-handoff");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -180,9 +184,7 @@ export function createHandoffCapsule(params: CreateHandoffParams): HandoffCapsul
     `${senderAgentId}:${receiverAgentId}:${taskHash}:${handoffNonce}:${issuedAt}`,
     "utf8",
   );
-  const capabilityProof = createHmac("sha256", gatewayKey)
-    .update(capabilityInput)
-    .digest("hex");
+  const capabilityProof = createHmac("sha256", gatewayKey).update(capabilityInput).digest("hex");
 
   // ── 2. Derive encryption key ─────────────────────────────────────────────
   const encKey = deriveEncryptionKey(gatewayKey, senderAgentId, receiverAgentId, handoffNonce);
@@ -212,7 +214,7 @@ export function createHandoffCapsule(params: CreateHandoffParams): HandoffCapsul
     .update(contextIv, "utf8")
     .digest("hex");
 
-  return {
+  const capsule: HandoffCapsule = {
     header,
     capabilityProof,
     encryptedContext,
@@ -221,6 +223,23 @@ export function createHandoffCapsule(params: CreateHandoffParams): HandoffCapsul
     handoffHash,
     accessProof,
   };
+
+  emitZkAuditEvent({
+    type: "zk.handoff.created",
+    senderAgentId,
+    receiverAgentId,
+    taskHash,
+    taskLabel,
+    handoffNonce,
+    hasAccessProof: accessProof !== undefined,
+    expiresAt,
+  });
+  log.info(
+    `handoff created sender=${senderAgentId} receiver=${receiverAgentId}` +
+      ` task="${taskLabel}" nonce=${handoffNonce.slice(0, 12)}… hasProof=${accessProof !== undefined}`,
+  );
+
+  return capsule;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -242,16 +261,36 @@ export function receiveHandoffCapsule(
   receiverAgentId: string,
   gatewayKey: Buffer,
 ): VerifyHandoffResult {
+  const receiveStart = Date.now();
   const { header } = capsule;
+
+  /** Emit a failure event and return the result. */
+  const fail = (reason: string): VerifyHandoffResult => {
+    const durationMs = Date.now() - receiveStart;
+    emitZkAuditEvent({
+      type: "zk.handoff.received",
+      senderAgentId: header.senderAgentId,
+      receiverAgentId,
+      handoffNonce: header.handoffNonce,
+      valid: false,
+      reason,
+      durationMs,
+    });
+    log.warn(
+      `handoff rejected sender=${header.senderAgentId} receiver=${receiverAgentId}` +
+        ` nonce=${header.handoffNonce.slice(0, 12)}… reason="${reason}" durationMs=${durationMs}`,
+    );
+    return { valid: false, reason };
+  };
 
   // 1. Receiver ID check
   if (header.receiverAgentId !== receiverAgentId) {
-    return { valid: false, reason: "capsule not addressed to this agent" };
+    return fail("capsule not addressed to this agent");
   }
 
   // 2. Expiry check
   if (Date.now() > header.expiresAt) {
-    return { valid: false, reason: "handoff capsule has expired" };
+    return fail("handoff capsule has expired");
   }
 
   // 3. Capsule integrity hash
@@ -261,7 +300,7 @@ export function receiveHandoffCapsule(
     .update(capsule.contextIv, "utf8")
     .digest("hex");
   if (!timingSafeCompare(capsule.handoffHash, expectedHash)) {
-    return { valid: false, reason: "handoff capsule integrity check failed" };
+    return fail("handoff capsule integrity check failed");
   }
 
   // 4. Verify capability proof
@@ -269,11 +308,9 @@ export function receiveHandoffCapsule(
     `${header.senderAgentId}:${header.receiverAgentId}:${header.taskHash}:${header.handoffNonce}:${header.issuedAt}`,
     "utf8",
   );
-  const expectedProof = createHmac("sha256", gatewayKey)
-    .update(capabilityInput)
-    .digest("hex");
+  const expectedProof = createHmac("sha256", gatewayKey).update(capabilityInput).digest("hex");
   if (!timingSafeCompare(capsule.capabilityProof, expectedProof)) {
-    return { valid: false, reason: "capability proof MAC invalid — possible unauthorized sender" };
+    return fail("capability proof MAC invalid — possible unauthorized sender");
   }
 
   // 5. Decrypt context
@@ -291,9 +328,24 @@ export function receiveHandoffCapsule(
     decipher.setAuthTag(tag);
     const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     const context = JSON.parse(plaintext.toString("utf8")) as HandoffContext;
+
+    const durationMs = Date.now() - receiveStart;
+    emitZkAuditEvent({
+      type: "zk.handoff.received",
+      senderAgentId: header.senderAgentId,
+      receiverAgentId,
+      handoffNonce: header.handoffNonce,
+      valid: true,
+      durationMs,
+    });
+    log.info(
+      `handoff accepted sender=${header.senderAgentId} receiver=${receiverAgentId}` +
+        ` nonce=${header.handoffNonce.slice(0, 12)}… durationMs=${durationMs}`,
+    );
+
     return { valid: true, context };
   } catch {
-    return { valid: false, reason: "context decryption failed — tampered ciphertext or wrong key" };
+    return fail("context decryption failed — tampered ciphertext or wrong key");
   }
 }
 
@@ -314,10 +366,20 @@ export class HandoffNonceRegistry {
    * Check whether a nonce has been seen before.
    * Returns false (not replayed) and registers the nonce on first call.
    * Returns true (replayed) if the nonce was already seen.
+   *
+   * Pass `receiverAgentId` so a replay event can be emitted with full context.
    */
-  checkAndRegister(nonce: string, expiresAt: number): boolean {
+  checkAndRegister(nonce: string, expiresAt: number, receiverAgentId?: string): boolean {
     this.maybePrune();
     if (this.seen.has(nonce)) {
+      emitZkAuditEvent({
+        type: "zk.handoff.replay",
+        handoffNonce: nonce,
+        receiverAgentId: receiverAgentId ?? "unknown",
+      });
+      log.warn(
+        `replay detected nonce=${nonce.slice(0, 12)}… receiver=${receiverAgentId ?? "unknown"}`,
+      );
       return true; // replay detected
     }
     this.seen.set(nonce, expiresAt);

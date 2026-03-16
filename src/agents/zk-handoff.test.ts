@@ -1,10 +1,8 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import {
-  HandoffNonceRegistry,
-  createHandoffCapsule,
-  receiveHandoffCapsule,
-} from "./zk-handoff.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resetDiagnosticEventsForTest } from "../infra/diagnostic-events.js";
+import { type DiagnosticZkEvent, onZkAuditEvent } from "../infra/zk-audit-events.js";
+import { HandoffNonceRegistry, createHandoffCapsule, receiveHandoffCapsule } from "./zk-handoff.js";
 
 // ── Test fixtures ─────────────────────────────────────────────────────────────
 
@@ -72,7 +70,9 @@ describe("receiveHandoffCapsule — rejects", () => {
     const capsule = createHandoffCapsule(BASE_PARAMS);
     const result = receiveHandoffCapsule(capsule, "agent:test:intruder", GATEWAY_KEY);
     expect(result.valid).toBe(false);
-    if (result.valid) return;
+    if (result.valid) {
+      return;
+    }
     expect(result.reason).toMatch(/not addressed/);
   });
 
@@ -81,7 +81,9 @@ describe("receiveHandoffCapsule — rejects", () => {
     const wrongKey = Buffer.from("wrong-gateway-key-32-bytes-wrong", "utf8");
     const result = receiveHandoffCapsule(capsule, RECEIVER_ID, wrongKey);
     expect(result.valid).toBe(false);
-    if (result.valid) return;
+    if (result.valid) {
+      return;
+    }
     expect(result.reason).toMatch(/MAC invalid/);
   });
 
@@ -89,7 +91,9 @@ describe("receiveHandoffCapsule — rejects", () => {
     const capsule = createHandoffCapsule({ ...BASE_PARAMS, ttlMs: -1 }); // already expired
     const result = receiveHandoffCapsule(capsule, RECEIVER_ID, GATEWAY_KEY);
     expect(result.valid).toBe(false);
-    if (result.valid) return;
+    if (result.valid) {
+      return;
+    }
     expect(result.reason).toMatch(/expired/);
   });
 
@@ -111,7 +115,9 @@ describe("receiveHandoffCapsule — rejects", () => {
     };
     const result = receiveHandoffCapsule(tampered, RECEIVER_ID, GATEWAY_KEY);
     expect(result.valid).toBe(false);
-    if (result.valid) return;
+    if (result.valid) {
+      return;
+    }
     expect(result.reason).toMatch(/integrity/);
   });
 
@@ -130,7 +136,9 @@ describe("receiveHandoffCapsule — rejects", () => {
     };
     const result = receiveHandoffCapsule(rehashedCapsule, RECEIVER_ID, GATEWAY_KEY);
     expect(result.valid).toBe(false);
-    if (result.valid) return;
+    if (result.valid) {
+      return;
+    }
     expect(result.reason).toMatch(/MAC invalid/);
   });
 });
@@ -143,7 +151,7 @@ describe("HandoffNonceRegistry", () => {
     const nonce = "some-unique-nonce-abc";
     const exp = Date.now() + 300_000;
     expect(registry.checkAndRegister(nonce, exp)).toBe(false); // first time: allowed
-    expect(registry.checkAndRegister(nonce, exp)).toBe(true);  // replay: rejected
+    expect(registry.checkAndRegister(nonce, exp)).toBe(true); // replay: rejected
   });
 
   it("allows the same nonce value after its entry expires (prune)", async () => {
@@ -165,5 +173,77 @@ describe("HandoffNonceRegistry", () => {
     expect(registry.checkAndRegister("nonce-1", exp)).toBe(true);
     expect(registry.checkAndRegister("nonce-2", exp)).toBe(true);
     expect(registry.checkAndRegister("nonce-3", exp)).toBe(false);
+  });
+});
+
+// ── Audit event capture ─────────────────────────────────────────────────────
+
+describe("zk-handoff audit events", () => {
+  let events: DiagnosticZkEvent[];
+  let stop: () => void;
+
+  beforeEach(() => {
+    events = [];
+    resetDiagnosticEventsForTest();
+    stop = onZkAuditEvent((e) => events.push(e));
+  });
+  afterEach(() => stop());
+
+  it("createHandoffCapsule emits zk.handoff.created", () => {
+    createHandoffCapsule(BASE_PARAMS);
+    const ev = events.find((e) => e.type === "zk.handoff.created");
+    expect(ev).toBeDefined();
+    if (ev?.type !== "zk.handoff.created") {
+      return;
+    }
+    expect(ev.senderAgentId).toBe(SENDER_ID);
+    expect(ev.receiverAgentId).toBe(RECEIVER_ID);
+    expect(ev.taskHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(ev.taskLabel).toBe("flight-booking");
+    expect(ev.hasAccessProof).toBe(false);
+  });
+
+  it("receiveHandoffCapsule emits zk.handoff.received with valid=true", () => {
+    const capsule = createHandoffCapsule(BASE_PARAMS);
+    events.length = 0; // discard the created event
+    receiveHandoffCapsule(capsule, RECEIVER_ID, GATEWAY_KEY);
+    const ev = events.find((e) => e.type === "zk.handoff.received");
+    expect(ev).toBeDefined();
+    if (ev?.type !== "zk.handoff.received") {
+      return;
+    }
+    expect(ev.valid).toBe(true);
+    expect(ev.reason).toBeUndefined();
+    expect(ev.durationMs).toBeGreaterThanOrEqual(0);
+    expect(ev.handoffNonce).toBe(capsule.header.handoffNonce);
+  });
+
+  it("receiveHandoffCapsule emits zk.handoff.received with valid=false on wrong receiver", () => {
+    const capsule = createHandoffCapsule(BASE_PARAMS);
+    events.length = 0;
+    receiveHandoffCapsule(capsule, "agent:wrong:receiver", GATEWAY_KEY);
+    const ev = events.find((e) => e.type === "zk.handoff.received");
+    expect(ev).toBeDefined();
+    if (ev?.type !== "zk.handoff.received") {
+      return;
+    }
+    expect(ev.valid).toBe(false);
+    expect(ev.reason).toMatch(/not addressed/);
+  });
+
+  it("HandoffNonceRegistry emits zk.handoff.replay on replay", () => {
+    const registry = new HandoffNonceRegistry();
+    const nonce = "test-replay-nonce";
+    const exp = Date.now() + 300_000;
+    registry.checkAndRegister(nonce, exp, RECEIVER_ID); // first time
+    events.length = 0;
+    registry.checkAndRegister(nonce, exp, RECEIVER_ID); // replay
+    const ev = events.find((e) => e.type === "zk.handoff.replay");
+    expect(ev).toBeDefined();
+    if (ev?.type !== "zk.handoff.replay") {
+      return;
+    }
+    expect(ev.handoffNonce).toBe(nonce);
+    expect(ev.receiverAgentId).toBe(RECEIVER_ID);
   });
 });

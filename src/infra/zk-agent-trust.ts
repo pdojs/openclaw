@@ -33,6 +33,10 @@
  */
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createSubsystemLogger } from "../logging/subsystem.js";
+import { emitZkAuditEvent } from "./zk-audit-events.js";
+
+const log = createSubsystemLogger("zk-trust");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -142,7 +146,7 @@ export class MerkleTree {
    * insertion order.
    */
   constructor(leaves: string[]) {
-    const sorted = [...leaves].sort();
+    const sorted = [...leaves].toSorted();
     // Pad to next power of two with zero hashes so the tree is complete.
     const size = nextPow2(sorted.length || 1);
     const padded = sorted.concat(Array(size - sorted.length).fill(ZERO_HASH));
@@ -151,7 +155,7 @@ export class MerkleTree {
     while (current.length > 1) {
       const next: string[] = [];
       for (let i = 0; i < current.length; i += 2) {
-        next.push(mergeNodes(current[i]!, current[i + 1]!));
+        next.push(mergeNodes(current[i], current[i + 1]));
       }
       this.layers.push(next);
       current = next;
@@ -159,7 +163,7 @@ export class MerkleTree {
   }
 
   root(): string {
-    return this.layers.at(-1)![0]!;
+    return this.layers.at(-1)![0];
   }
 
   /**
@@ -167,7 +171,7 @@ export class MerkleTree {
    * Returns undefined if the leaf is not in the tree.
    */
   inclusionPath(leafHash: string): MerkleInclusionPath | undefined {
-    const baseLayer = this.layers[0]!;
+    const baseLayer = this.layers[0];
     const idx = baseLayer.indexOf(leafHash);
     if (idx === -1) {
       return undefined;
@@ -176,7 +180,7 @@ export class MerkleTree {
     const indices: number[] = [];
     let pos = idx;
     for (let d = 0; d < this.layers.length - 1; d++) {
-      const layer = this.layers[d]!;
+      const layer = this.layers[d];
       const siblingPos = pos % 2 === 0 ? pos + 1 : pos - 1;
       const sibling = layer[siblingPos] ?? ZERO_HASH;
       siblings.push(sibling);
@@ -204,8 +208,8 @@ function nextPow2(n: number): number {
 export function verifyMerklePath(path: MerkleInclusionPath, expectedRoot: string): boolean {
   let current = path.leaf;
   for (let d = 0; d < path.siblings.length; d++) {
-    const s = path.siblings[d]!;
-    const idx = path.indices[d]!;
+    const s = path.siblings[d];
+    const idx = path.indices[d];
     current = idx === 0 ? mergeNodes(current, s) : mergeNodes(s, current);
   }
   return timingSafeCompare(current, expectedRoot);
@@ -258,7 +262,21 @@ export function issueAccessPolicy(params: IssuePolicyParams): AccessPolicy {
   );
   const gatewayMac = createHmac("sha256", gatewayKey).update(macInput).digest("hex");
 
-  return { agentId, sessionId, policyRoot, issuedAt, expiresAt, gatewayMac };
+  const policy: AccessPolicy = { agentId, sessionId, policyRoot, issuedAt, expiresAt, gatewayMac };
+
+  emitZkAuditEvent({
+    type: "zk.policy.issued",
+    agentId,
+    sessionId,
+    policyRoot,
+    resourceCount: allowedResources.length,
+    expiresAt,
+  });
+  log.info(
+    `policy issued agentId=${agentId} sessionId=${sessionId} resources=${allowedResources.length} root=${policyRoot.slice(0, 16)}…`,
+  );
+
+  return policy;
 }
 
 /** Verify a policy MAC using the gateway key. */
@@ -373,7 +391,7 @@ export class AccessWitnessRecorder {
     );
     const gatewayMac = createHmac("sha256", gatewayKey).update(macInput).digest("hex");
 
-    return {
+    const proof: AccessProof = {
       agentId: policy.agentId,
       sessionId: policy.sessionId,
       policyRoot: policy.policyRoot,
@@ -384,6 +402,24 @@ export class AccessWitnessRecorder {
       gatewayMac,
       entries,
     };
+
+    const durationMs = Date.now() - now;
+    emitZkAuditEvent({
+      type: "zk.proof.generated",
+      agentId: policy.agentId,
+      sessionId: policy.sessionId,
+      accessRoot,
+      policyRoot: policy.policyRoot,
+      numAccesses: this.raw.length,
+      proofType: "commitment-v1",
+      durationMs,
+    });
+    log.debug(
+      `proof generated agentId=${policy.agentId} sessionId=${policy.sessionId}` +
+        ` accesses=${this.raw.length} accessRoot=${accessRoot.slice(0, 16)}… durationMs=${durationMs}`,
+    );
+
+    return proof;
   }
 }
 
@@ -411,6 +447,27 @@ export function verifyAccessProof(
   gatewayKey: Buffer,
   policy: AccessPolicy,
 ): VerifyProofResult {
+  const verifyStart = Date.now();
+
+  /** Emit a failure event and return the result. */
+  const fail = (reason: string): VerifyProofResult => {
+    const durationMs = Date.now() - verifyStart;
+    emitZkAuditEvent({
+      type: "zk.proof.verified",
+      agentId: proof.agentId,
+      sessionId: proof.sessionId,
+      valid: false,
+      reason,
+      proofType: proof.proofType,
+      durationMs,
+    });
+    log.warn(
+      `proof rejected agentId=${proof.agentId} sessionId=${proof.sessionId}` +
+        ` reason="${reason}" durationMs=${durationMs}`,
+    );
+    return { valid: false, reason };
+  };
+
   // 1. Check proof MAC
   const macInput = Buffer.from(
     `${proof.policyRoot}:${proof.accessRoot}:${proof.agentId}:${proof.sessionId}:${proof.proofTimestamp}`,
@@ -418,40 +475,56 @@ export function verifyAccessProof(
   );
   const expectedMac = createHmac("sha256", gatewayKey).update(macInput).digest("hex");
   if (!timingSafeCompare(proof.gatewayMac, expectedMac)) {
-    return { valid: false, reason: "proof gateway MAC invalid" };
+    return fail("proof gateway MAC invalid");
   }
 
   // 2. Check policy linkage
   if (proof.policyRoot !== policy.policyRoot) {
-    return { valid: false, reason: "proof policyRoot does not match policy" };
+    return fail("proof policyRoot does not match policy");
   }
   if (proof.agentId !== policy.agentId) {
-    return { valid: false, reason: "agentId mismatch" };
+    return fail("agentId mismatch");
   }
   if (proof.sessionId !== policy.sessionId) {
-    return { valid: false, reason: "sessionId mismatch" };
+    return fail("sessionId mismatch");
   }
   if (Date.now() > policy.expiresAt) {
-    return { valid: false, reason: "policy has expired" };
+    return fail("policy has expired");
   }
 
   // 3. Check entry count
   if (proof.entries.length !== proof.numAccesses) {
-    return { valid: false, reason: "numAccesses does not match entries length" };
+    return fail("numAccesses does not match entries length");
   }
 
   // 4. Verify all Merkle paths
   for (let i = 0; i < proof.entries.length; i++) {
-    const entry = proof.entries[i]!;
+    const entry = proof.entries[i];
     if (!verifyMerklePath(entry.accessPath, proof.accessRoot)) {
-      return { valid: false, reason: `access Merkle path invalid at entry ${i}` };
+      return fail(`access Merkle path invalid at entry ${i}`);
     }
     if (!verifyMerklePath(entry.policyPath, proof.policyRoot)) {
-      return { valid: false, reason: `policy Merkle path invalid at entry ${i}` };
+      return fail(`policy Merkle path invalid at entry ${i}`);
     }
   }
 
-  return { valid: true };
+  const result: VerifyProofResult = { valid: true };
+
+  const durationMs = Date.now() - verifyStart;
+  emitZkAuditEvent({
+    type: "zk.proof.verified",
+    agentId: proof.agentId,
+    sessionId: proof.sessionId,
+    valid: true,
+    proofType: proof.proofType,
+    durationMs,
+  });
+  log.info(
+    `proof verified agentId=${proof.agentId} sessionId=${proof.sessionId}` +
+      ` accesses=${proof.numAccesses} durationMs=${durationMs}`,
+  );
+
+  return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -459,10 +532,7 @@ export function verifyAccessProof(
 // ─────────────────────────────────────────────────────────────────────────────
 
 function commitResource(resourceId: ResourceId, nonce: Buffer): string {
-  return createHash("sha256")
-    .update(Buffer.from(resourceId, "utf8"))
-    .update(nonce)
-    .digest("hex");
+  return createHash("sha256").update(Buffer.from(resourceId, "utf8")).update(nonce).digest("hex");
 }
 
 /** Timing-safe hex string comparison. */

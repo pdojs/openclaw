@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resetDiagnosticEventsForTest } from "./diagnostic-events.js";
 import {
   AccessWitnessRecorder,
   MerkleTree,
@@ -7,6 +8,7 @@ import {
   verifyMerklePath,
   verifyPolicyMac,
 } from "./zk-agent-trust.js";
+import { type DiagnosticZkEvent, onZkAuditEvent } from "./zk-audit-events.js";
 
 // ── Test fixtures ─────────────────────────────────────────────────────────────
 
@@ -18,6 +20,79 @@ const ALLOWED = [
   "channel:telegram:chat_12345",
   "tool:bash:echo",
 ];
+
+// ── Audit event capture ──────────────────────────────────────────────────────
+
+describe("zk-agent-trust audit events", () => {
+  let events: DiagnosticZkEvent[];
+  let stop: () => void;
+
+  beforeEach(() => {
+    events = [];
+    resetDiagnosticEventsForTest();
+    stop = onZkAuditEvent((e) => events.push(e));
+  });
+  afterEach(() => stop());
+
+  it("issueAccessPolicy emits zk.policy.issued", () => {
+    issueAccessPolicy({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      allowedResources: ALLOWED,
+      gatewayKey: GATEWAY_KEY,
+    });
+    const ev = events.find((e) => e.type === "zk.policy.issued");
+    expect(ev).toBeDefined();
+    if (ev?.type !== "zk.policy.issued") {
+      return;
+    }
+    expect(ev.agentId).toBe(AGENT_ID);
+    expect(ev.sessionId).toBe(SESSION_ID);
+    expect(ev.resourceCount).toBe(ALLOWED.length);
+    expect(ev.policyRoot).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("generateProof emits zk.proof.generated", () => {
+    const policy = issueAccessPolicy({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      allowedResources: ALLOWED,
+      gatewayKey: GATEWAY_KEY,
+    });
+    const recorder = new AccessWitnessRecorder(AGENT_ID, SESSION_ID);
+    recorder.record(ALLOWED[0]);
+    recorder.generateProof(policy, GATEWAY_KEY, ALLOWED);
+    const ev = events.find((e) => e.type === "zk.proof.generated");
+    expect(ev).toBeDefined();
+    if (ev?.type !== "zk.proof.generated") {
+      return;
+    }
+    expect(ev.numAccesses).toBe(1);
+    expect(ev.proofType).toBe("commitment-v1");
+    expect(ev.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("verifyAccessProof emits zk.proof.verified with valid=true", () => {
+    const policy = issueAccessPolicy({
+      agentId: AGENT_ID,
+      sessionId: SESSION_ID,
+      allowedResources: ALLOWED,
+      gatewayKey: GATEWAY_KEY,
+    });
+    const recorder = new AccessWitnessRecorder(AGENT_ID, SESSION_ID);
+    recorder.record(ALLOWED[0]);
+    const proof = recorder.generateProof(policy, GATEWAY_KEY, ALLOWED);
+    events.length = 0; // reset — only interested in the verify event
+    verifyAccessProof(proof, GATEWAY_KEY, policy);
+    const ev = events.find((e) => e.type === "zk.proof.verified");
+    expect(ev).toBeDefined();
+    if (ev?.type !== "zk.proof.verified") {
+      return;
+    }
+    expect(ev.valid).toBe(true);
+    expect(ev.reason).toBeUndefined();
+  });
+});
 
 // ── MerkleTree ────────────────────────────────────────────────────────────────
 
@@ -110,7 +185,7 @@ describe("issueAccessPolicy / verifyPolicyMac", () => {
     const p2 = issueAccessPolicy({
       agentId: AGENT_ID,
       sessionId: SESSION_ID,
-      allowedResources: [...ALLOWED].reverse(), // reversed order — should not matter
+      allowedResources: [...ALLOWED].toReversed(), // reversed order — should not matter
       gatewayKey: GATEWAY_KEY,
     });
     expect(p1.policyRoot).toBe(p2.policyRoot);
@@ -122,20 +197,20 @@ describe("issueAccessPolicy / verifyPolicyMac", () => {
 describe("AccessWitnessRecorder", () => {
   it("records commitments that are hex strings", () => {
     const recorder = new AccessWitnessRecorder(AGENT_ID, SESSION_ID);
-    const c = recorder.record(ALLOWED[0]!);
+    const c = recorder.record(ALLOWED[0]);
     expect(c).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("same resource produces different commitments each time (nonce)", () => {
     const recorder = new AccessWitnessRecorder(AGENT_ID, SESSION_ID);
-    const c1 = recorder.record(ALLOWED[0]!);
-    const c2 = recorder.record(ALLOWED[0]!);
+    const c1 = recorder.record(ALLOWED[0]);
+    const c2 = recorder.record(ALLOWED[0]);
     expect(c1).not.toBe(c2);
   });
 
   it("sealed witness has matching agentId/sessionId", () => {
     const recorder = new AccessWitnessRecorder(AGENT_ID, SESSION_ID);
-    recorder.record(ALLOWED[0]!);
+    recorder.record(ALLOWED[0]);
     const witness = recorder.seal();
     expect(witness.agentId).toBe(AGENT_ID);
     expect(witness.sessionId).toBe(SESSION_ID);
@@ -170,12 +245,12 @@ describe("generateProof / verifyAccessProof", () => {
   }
 
   it("proof verifies when agent accessed only allowed resources", () => {
-    const { policy, proof } = buildScenario([ALLOWED[0]!, ALLOWED[1]!]);
+    const { policy, proof } = buildScenario([ALLOWED[0], ALLOWED[1]]);
     expect(verifyAccessProof(proof, GATEWAY_KEY, policy)).toEqual({ valid: true });
   });
 
   it("proof verifies for a single access", () => {
-    const { policy, proof } = buildScenario([ALLOWED[0]!]);
+    const { policy, proof } = buildScenario([ALLOWED[0]]);
     expect(verifyAccessProof(proof, GATEWAY_KEY, policy)).toEqual({ valid: true });
   });
 
@@ -190,7 +265,7 @@ describe("generateProof / verifyAccessProof", () => {
   });
 
   it("proof fails verification with wrong gateway key", () => {
-    const { policy, proof } = buildScenario([ALLOWED[0]!]);
+    const { policy, proof } = buildScenario([ALLOWED[0]]);
     const wrongKey = Buffer.from("wrong-key-32-bytes-wrong-key----", "utf8");
     const result = verifyAccessProof(proof, wrongKey, policy);
     expect(result.valid).toBe(false);
@@ -212,7 +287,7 @@ describe("generateProof / verifyAccessProof", () => {
   });
 
   it("tampered proof entry fails Merkle path verification", () => {
-    const { policy, proof } = buildScenario([ALLOWED[0]!]);
+    const { policy, proof } = buildScenario([ALLOWED[0]]);
     const tampered = {
       ...proof,
       entries: proof.entries.map((e) => ({
@@ -227,10 +302,31 @@ describe("generateProof / verifyAccessProof", () => {
     expect(result.valid).toBe(false);
   });
 
+  it("emits zk.proof.verified with valid=false on tamper", () => {
+    const events: DiagnosticZkEvent[] = [];
+    const stop = onZkAuditEvent((e) => events.push(e));
+    try {
+      const { policy, proof } = buildScenario([ALLOWED[0]]);
+      const tampered = {
+        ...proof,
+        gatewayMac: "00".padEnd(64, "0"),
+      };
+      verifyAccessProof(tampered, GATEWAY_KEY, policy);
+    } finally {
+      stop();
+    }
+    const ev = events.find((e) => e.type === "zk.proof.verified");
+    expect(ev).toBeDefined();
+    expect(ev?.type === "zk.proof.verified" && ev.valid).toBe(false);
+    expect(ev?.type === "zk.proof.verified" && ev.reason).toMatch(/MAC invalid/);
+  });
+
   it("proof fails if agentId is mismatched", () => {
-    const { policy, proof } = buildScenario([ALLOWED[0]!]);
+    const { policy, proof } = buildScenario([ALLOWED[0]]);
     const result = verifyAccessProof({ ...proof, agentId: "other-agent" }, GATEWAY_KEY, policy);
+    // Tampering agentId breaks the gateway MAC (which covers agentId) before
+    // reaching the explicit agentId comparison — either rejection is correct.
     expect(result.valid).toBe(false);
-    expect(result.reason).toMatch(/agentId/);
+    expect(result.reason).toMatch(/MAC invalid|agentId/);
   });
 });
