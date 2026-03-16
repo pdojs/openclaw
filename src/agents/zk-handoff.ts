@@ -45,9 +45,9 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
+import type { AccessProof } from "../infra/zk-agent-trust.js";
 import { emitZkAuditEvent } from "../infra/zk-audit-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
-import type { AccessProof } from "./zk-agent-trust.js";
 
 const log = createSubsystemLogger("zk-handoff");
 

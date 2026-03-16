@@ -5,6 +5,8 @@ import {
   normalizeSpawnedRunMetadata,
   resolveIngressWorkspaceOverrideForSpawnedRun,
 } from "../../agents/spawned-context.js";
+import { HandoffNonceRegistry, receiveHandoffCapsule } from "../../agents/zk-handoff.js";
+import { resolveZkSpawnKey } from "../../agents/zk-spawn-key.js";
 import { buildBareSessionResetPrompt } from "../../auto-reply/reply/session-reset-prompt.js";
 import { agentCommandFromIngress } from "../../commands/agent.js";
 import { loadConfig } from "../../config/config.js";
@@ -63,6 +65,9 @@ import {
 } from "./agent-wait-dedupe.js";
 import { normalizeRpcAttachmentsToChatAttachments } from "./attachment-normalize.js";
 import type { GatewayRequestHandlerOptions, GatewayRequestHandlers } from "./types.js";
+
+// Module-level nonce registry shared across all agent dispatches in this gateway process.
+const _zkNonceRegistry = new HandoffNonceRegistry();
 
 const RESET_COMMAND_RE = /^\/(new|reset)(?:\s+([\s\S]*))?$/i;
 
@@ -190,6 +195,7 @@ export const agentHandlers: GatewayRequestHandlers = {
       bestEffortDeliver?: boolean;
       label?: string;
       inputProvenance?: InputProvenance;
+      zkHandoffCapsule?: string;
     };
     const senderIsOwner = resolveSenderIsOwnerFromClient(client);
     const cfg = loadConfig();
@@ -355,6 +361,25 @@ export const agentHandlers: GatewayRequestHandlers = {
       const labelValue = request.label?.trim() || entry?.label;
       const sessionAgent = resolveAgentIdFromSessionKey(canonicalKey);
       spawnedByValue = canonicalizeSpawnedByForAgent(cfg, sessionAgent, entry?.spawnedBy);
+      // Verify ZK handoff capsule when this run was spawned by another agent.
+      if (spawnedByValue && request.zkHandoffCapsule) {
+        try {
+          const capsule = JSON.parse(request.zkHandoffCapsule) as Record<string, unknown>;
+          const header = capsule?.header as Record<string, unknown> | undefined;
+          if (header?.handoffNonce && typeof header.expiresAt === "number") {
+            _zkNonceRegistry.checkAndRegister(
+              typeof header.handoffNonce === "string"
+                ? header.handoffNonce
+                : JSON.stringify(header.handoffNonce),
+              header.expiresAt,
+              canonicalKey,
+            );
+          }
+          receiveHandoffCapsule(capsule, canonicalKey, resolveZkSpawnKey());
+        } catch {
+          // Verification failure must never block agent dispatch.
+        }
+      }
       let inheritedGroup:
         | { groupId?: string; groupChannel?: string; groupSpace?: string }
         | undefined;
