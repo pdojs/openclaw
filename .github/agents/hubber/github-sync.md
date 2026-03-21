@@ -1,8 +1,10 @@
 ---
-description: Update OpenClaw from upstream when branch has diverged (ahead/behind)
+description: Hubber runbook for syncing GitHub branch divergence
 ---
 
-# OpenClaw Upstream Sync Workflow
+# Hubber: GitHub Upstream Sync Runbook
+
+Use this runbook for the **hubber** agent, which interacts only with GitHub/git state.
 
 Use this workflow when your fork has diverged from upstream (e.g., "18 commits ahead, 29 commits behind").
 

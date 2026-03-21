@@ -480,6 +480,16 @@ function loadSkillEntries(
   const projectAgentsSkillsDir = path.resolve(workspaceDir, ".agents", "skills");
   const projectAgentsSkills = loadSkills({
     dir: projectAgentsSkillsDir,
+    source: "agents-skills-project-legacy",
+  });
+  const projectGithubSkillsDir = path.resolve(workspaceDir, ".github", "skills");
+  const projectGithubSkills = loadSkills({
+    dir: projectGithubSkillsDir,
+    source: "github-skills-project",
+  });
+  const projectGithubAgentsSkillsDir = path.resolve(workspaceDir, ".github", "agents", "skills");
+  const projectGithubAgentsSkills = loadSkills({
+    dir: projectGithubAgentsSkillsDir,
     source: "agents-skills-project",
   });
   const workspaceSkills = loadSkills({
@@ -488,7 +498,8 @@ function loadSkillEntries(
   });
 
   const merged = new Map<string, Skill>();
-  // Precedence: extra < bundled < managed < agents-skills-personal < agents-skills-project < workspace
+  // Precedence: extra < bundled < managed < agents-skills-personal
+  // < agents-skills-project-legacy < github-skills-project < agents-skills-project < workspace
   for (const skill of extraSkills) {
     merged.set(skill.name, skill);
   }
@@ -502,6 +513,12 @@ function loadSkillEntries(
     merged.set(skill.name, skill);
   }
   for (const skill of projectAgentsSkills) {
+    merged.set(skill.name, skill);
+  }
+  for (const skill of projectGithubSkills) {
+    merged.set(skill.name, skill);
+  }
+  for (const skill of projectGithubAgentsSkills) {
     merged.set(skill.name, skill);
   }
   for (const skill of workspaceSkills) {
