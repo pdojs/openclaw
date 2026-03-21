@@ -26,7 +26,6 @@
     "openclaw.mjs",
     "README-header.png",
     "README.md",
-    "assets/",
     "dist/",
     "docs/",
     "!docs/.generated/**",
