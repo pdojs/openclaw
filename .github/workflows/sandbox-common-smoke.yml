@@ -30,19 +30,29 @@ jobs:
           submodules: false
 
       - name: Verify Docker availability
+        id: docker
         shell: bash
+        continue-on-error: true
         run: |
           set -euo pipefail
           if ! command -v docker >/dev/null 2>&1; then
-            echo "::error::docker is required on the self-hosted runner for sandbox-common-smoke."
-            exit 1
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::docker CLI is unavailable; skipping sandbox-common-smoke."
+            exit 0
           fi
-          docker version
+          if docker version >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Docker daemon is unavailable; skipping sandbox-common-smoke."
+          fi
 
       - name: Set up Docker Builder
+        if: steps.docker.outputs.available == 'true'
         uses: docker/setup-buildx-action@v4
 
       - name: Build minimal sandbox base (USER sandbox)
+        if: steps.docker.outputs.available == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -55,6 +65,7 @@ jobs:
           EOF
 
       - name: Build sandbox-common image (root for installs, sandbox at runtime)
+        if: steps.docker.outputs.available == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -70,3 +81,7 @@ jobs:
 
           u="$(docker run --rm openclaw-sandbox-common-smoke:bookworm-slim sh -lc 'id -un')"
           test "$u" = "sandbox"
+
+      - name: Mark smoke as skipped when Docker unavailable
+        if: steps.docker.outputs.available != 'true'
+        run: echo "Skipping sandbox-common-smoke because Docker is unavailable on this self-hosted runner."
