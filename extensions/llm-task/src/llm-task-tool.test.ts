@@ -9,6 +9,29 @@ vi.mock("openclaw/extension-api", () => {
   };
 });
 
+vi.mock("openclaw/plugin-sdk/llm-task", () => {
+  const normalizeThinkLevel = (raw?: string | null) => {
+    if (!raw) {
+      return undefined;
+    }
+    const key = raw.trim().toLowerCase();
+    if (key === "on") {
+      return "low";
+    }
+    if (["off", "minimal", "low", "medium", "high", "xhigh", "adaptive"].includes(key)) {
+      return key as "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "adaptive";
+    }
+    return undefined;
+  };
+  return {
+    formatThinkingLevels: () => "off, minimal, low, medium, high, adaptive",
+    formatXHighModelHint: () => "provider models that advertise xhigh reasoning",
+    normalizeThinkLevel,
+    resolvePreferredOpenClawTmpDir: () => "/tmp",
+    supportsXHighThinking: () => false,
+  };
+});
+
 import { runEmbeddedPiAgent } from "openclaw/extension-api";
 import { createLlmTaskTool } from "./llm-task-tool.js";
 
