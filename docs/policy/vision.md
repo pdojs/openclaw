@@ -57,7 +57,7 @@ Core stays lean; optional capability should usually ship as plugins.
 Preferred plugin path is npm package distribution plus local extension loading for development.
 If you build a plugin, host and maintain it in your own repository.
 The bar for adding optional plugins to core is intentionally high.
-Plugin docs: [`docs/tools/plugin.md`](docs/tools/plugin.md)
+Plugin docs: [Plugins](/tools/plugin)
 Community plugin listing + PR bar: [https://docs.openclaw.ai/plugins/community](https://docs.openclaw.ai/plugins/community)
 
 Memory is a special plugin slot where only one memory plugin can be active at a time.
