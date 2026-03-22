@@ -434,11 +434,27 @@ jobs:
           fi
           python3 --version
 
+      - name: Compute pre-commit config hash
+        id: precommit-hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f .pre-commit-config.yaml ]; then
+            if command -v shasum >/dev/null 2>&1; then
+              value="$(shasum -a 256 .pre-commit-config.yaml | awk '{print $1}')"
+            else
+              value="$(sha256sum .pre-commit-config.yaml | awk '{print $1}')"
+            fi
+          else
+            value="no-precommit-config"
+          fi
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+
       - name: Restore pre-commit cache
         uses: actions/cache@v5
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-py312-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: pre-commit-${{ runner.os }}-py312-${{ steps.precommit-hash.outputs.value }}
 
       - name: Install pre-commit
         run: |
