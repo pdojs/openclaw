@@ -636,8 +636,8 @@ jobs:
 
       - name: Swift lint
         run: |
-          swiftlint --config .swiftlint.yml
-          swiftformat --lint apps/macos/Sources --config .swiftformat
+          swiftlint --config config/dev/swiftlint.yml
+          swiftformat --lint apps/macos/Sources --config config/dev/swiftformat
 
       - name: Cache SwiftPM
         uses: actions/cache@v5

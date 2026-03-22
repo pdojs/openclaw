@@ -78,7 +78,7 @@ repos:
     rev: v0.11.0
     hooks:
       - id: shellcheck
-        args: [--severity=error] # Only fail on errors, not warnings/info
+        args: [--severity=error, --rcfile=config/dev/shellcheckrc] # Only fail on errors, not warnings/info
         # Exclude vendor and scripts with embedded code or known issues
         exclude: "^(vendor/|scripts/e2e/)"
 
@@ -127,7 +127,7 @@ repos:
       # oxlint --type-aware src test
       - id: oxlint
         name: oxlint
-        entry: scripts/pre-commit/run-node-tool.sh oxlint --type-aware src test
+        entry: scripts/pre-commit/run-node-tool.sh oxlint --config config/dev/oxlint.json --type-aware src test
         language: system
         pass_filenames: false
         types_or: [javascript, jsx, ts, tsx]
@@ -135,7 +135,7 @@ repos:
       # oxfmt --check src test
       - id: oxfmt
         name: oxfmt
-        entry: scripts/pre-commit/run-node-tool.sh oxfmt --check src test
+        entry: scripts/pre-commit/run-node-tool.sh oxfmt --config config/dev/oxfmt.jsonc --check src test
         language: system
         pass_filenames: false
         types_or: [javascript, jsx, ts, tsx]
@@ -143,7 +143,7 @@ repos:
       # swiftlint (same as CI)
       - id: swiftlint
         name: swiftlint
-        entry: swiftlint --config .swiftlint.yml
+        entry: swiftlint --config config/dev/swiftlint.yml
         language: system
         pass_filenames: false
         types: [swift]
@@ -151,7 +151,7 @@ repos:
       # swiftformat --lint (same as CI)
       - id: swiftformat
         name: swiftformat
-        entry: swiftformat --lint apps/macos/Sources --config .swiftformat
+        entry: swiftformat --lint apps/macos/Sources --config config/dev/swiftformat
         language: system
         pass_filenames: false
         types: [swift]

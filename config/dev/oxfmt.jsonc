@@ -1,5 +1,5 @@
 {
-  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "$schema": "../../node_modules/oxfmt/configuration_schema.json",
   "experimentalSortImports": {
     "newlinesBetween": false,
   },
@@ -15,11 +15,14 @@
     "docker-compose.yml",
     "dist/",
     "docs/_layouts/",
+    "**/docs/.generated/config-baseline.json",
     "node_modules/",
     "patches/",
     "pnpm-lock.yaml/",
     "src/gateway/server-methods/CLAUDE.md",
-    "src/auto-reply/reply/export-html/",
+    "**/src/auto-reply/reply/export-html/",
+    "**/src/auto-reply/reply/export-html/template.js",
+    "**/src/auto-reply/reply/export-html/template.security.test.ts",
     "Swabble/",
     "vendor/",
   ],
