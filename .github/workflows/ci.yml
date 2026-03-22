@@ -13,7 +13,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  # Detect docs-only changes to skip heavy jobs (test, build, Windows, macOS, Android).
+  # Detect docs-only changes to skip heavy jobs (test, build, macOS).
   # Lint and format always run. Fail-safe: if detection fails, run everything.
   docs-scope:
     runs-on: [self-hosted, macOS, ARM64]
@@ -505,7 +505,7 @@ jobs:
 
   checks-windows:
     needs: [docs-scope, changed-scope]
-    if: needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_windows == 'true'
+    if: false # Deprecated in this fork (Linux/macOS/iOS focus).
     runs-on: blacksmith-32vcpu-windows-2025
     timeout-minutes: 45
     env:
@@ -867,7 +867,7 @@ jobs:
 
   android:
     needs: [docs-scope, changed-scope]
-    if: needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_android == 'true'
+    if: false # Deprecated in this fork (Linux/macOS/iOS focus).
     runs-on: blacksmith-16vcpu-ubuntu-2404
     strategy:
       fail-fast: false
