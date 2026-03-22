@@ -16,14 +16,14 @@ env:
 jobs:
   no-tabs:
     if: github.event_name != 'workflow_dispatch'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Fail on tabs in workflow files
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           from __future__ import annotations
 
           import pathlib
@@ -48,7 +48,7 @@ jobs:
 
   actionlint:
     if: github.event_name != 'workflow_dispatch'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -58,13 +58,32 @@ jobs:
         run: |
           set -euo pipefail
           ACTIONLINT_VERSION="1.7.11"
-          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          case "$(uname -s)-$(uname -m)" in
+            Darwin-arm64)
+              archive="actionlint_${ACTIONLINT_VERSION}_darwin_arm64.tar.gz"
+              ;;
+            Linux-x86_64)
+              archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+              ;;
+            *)
+              echo "::error::Unsupported runner platform for actionlint: $(uname -s)-$(uname -m)"
+              exit 1
+              ;;
+          esac
           base_url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
           curl -sSfL -o "${archive}" "${base_url}/${archive}"
           curl -sSfL -o checksums.txt "${base_url}/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
-          grep " ${archive}\$" checksums.txt | sha256sum -c -
+          checksum="$(grep " ${archive}\$" checksums.txt | awk '{print $1}')"
+          if command -v shasum >/dev/null 2>&1; then
+            printf '%s  %s\n' "$checksum" "$archive" | shasum -a 256 -c -
+          else
+            printf '%s  %s\n' "$checksum" "$archive" | sha256sum -c -
+          fi
           tar -xzf "${archive}" actionlint
-          sudo install -m 0755 actionlint /usr/local/bin/actionlint
+          install_dir="$RUNNER_TEMP/actionlint-bin"
+          mkdir -p "$install_dir"
+          install -m 0755 actionlint "$install_dir/actionlint"
+          echo "$install_dir" >> "$GITHUB_PATH"
 
       - name: Lint workflows
         run: actionlint
@@ -74,7 +93,7 @@ jobs:
 
   config-docs-drift:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
