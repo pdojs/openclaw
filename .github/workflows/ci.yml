@@ -425,6 +425,9 @@ jobs:
 
       - name: Setup Python
         id: setup-python
+        env:
+          RUNNER_TOOL_CACHE: ${{ runner.temp }}/toolcache
+          AGENT_TOOLSDIRECTORY: ${{ runner.temp }}/toolcache
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
