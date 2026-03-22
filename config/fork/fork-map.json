@@ -33,8 +33,6 @@
           ".github/workflows/ci.yml",
           "apps/ios/.swiftlint.yml",
           "apps/ios/project.yml",
-          "Swabble/scripts/format.sh",
-          "Swabble/scripts/lint.sh",
           "scripts/pr"
         ]
       },

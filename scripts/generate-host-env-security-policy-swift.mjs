@@ -54,9 +54,14 @@ ${renderSwiftStringArray(policy.blockedPrefixes)}
 }
 `;
 
-const current = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, "utf8") : null;
+const outputExists = fs.existsSync(outputPath);
+const current = outputExists ? fs.readFileSync(outputPath, "utf8") : null;
 
 if (checkOnly) {
+  if (!outputExists) {
+    console.log(`SKIP ${path.relative(repoRoot, outputPath)} (native apps not present)`);
+    process.exit(0);
+  }
   if (current === generated) {
     console.log(`OK ${path.relative(repoRoot, outputPath)}`);
     process.exit(0);
@@ -71,6 +76,10 @@ if (checkOnly) {
 }
 
 if (writeMode) {
+  if (!outputExists) {
+    console.log(`SKIP ${path.relative(repoRoot, outputPath)} (native apps not present)`);
+    process.exit(0);
+  }
   if (current !== generated) {
     fs.writeFileSync(outputPath, generated);
   }
