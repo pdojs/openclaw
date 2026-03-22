@@ -165,6 +165,7 @@
 
 - If `git branch -d/-D <branch>` is policy-blocked, delete the local ref directly: `git update-ref -d refs/heads/<branch>`.
 - Bulk PR close/reopen safety: if a close action would affect more than 5 PRs, first ask for explicit user confirmation with the exact PR count and target scope/query.
+- Fork upstream sync: for this fork, use curated sync (`scripts/fork-gh-pull.sh` + `config/fork/fork-map.json`) instead of blind `git pull` from upstream.
 
 ## GitHub Search (`gh`)
 

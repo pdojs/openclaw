@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "fork": {
+    "ownerRepo": "pdojs/openclaw",
+    "upstreamRepo": "openclaw/openclaw",
+    "defaultBaseBranch": "main",
+    "syncMode": "curated"
+  },
+  "contracts": {
+    "mustHold": [
+      "CLI entrypoint remains openclaw.mjs-compatible",
+      "Plugin SDK export contract remains stable",
+      "Gateway/auth behavior guarded by existing test suites",
+      "Docs/build/test commands in package.json remain valid"
+    ],
+    "verificationCommands": ["pnpm tsgo", "pnpm check"]
+  },
+  "localDivergence": {
+    "structuralChanges": [
+      {
+        "id": "dev-config-centralization",
+        "status": "active",
+        "description": "Dev/lint/format configs moved from root into config/dev and all tool invocations use explicit --config paths.",
+        "paths": [
+          "config/dev/.markdownlint-cli2.jsonc",
+          "config/dev/oxfmt.jsonc",
+          "config/dev/oxlint.json",
+          "config/dev/shellcheckrc",
+          "config/dev/swiftformat",
+          "config/dev/swiftlint.yml",
+          "package.json",
+          ".pre-commit-config.yaml",
+          ".github/workflows/ci.yml",
+          "apps/ios/.swiftlint.yml",
+          "apps/ios/project.yml",
+          "Swabble/scripts/format.sh",
+          "Swabble/scripts/lint.sh",
+          "scripts/pr"
+        ]
+      },
+      {
+        "id": "policy-doc-relocation",
+        "status": "active",
+        "description": "Root policy docs moved into docs tree.",
+        "paths": [
+          "docs/policy/vision.md",
+          "docs/reference/acp-bridge.md",
+          "README.md",
+          "CONTRIBUTING.md",
+          ".github/labeler.yml",
+          ".github/workflows/labeler.yml"
+        ]
+      },
+      {
+        "id": "deploy-reorg-compat",
+        "status": "active",
+        "description": "Deploy artifacts moved under deploy/* with root compatibility entrypoints preserved.",
+        "paths": [
+          "deploy/docker/",
+          "deploy/platform/fly/",
+          "deploy/platform/render/",
+          "deploy/podman/",
+          "deploy/scripts/",
+          "Dockerfile",
+          "Dockerfile.sandbox",
+          "Dockerfile.sandbox-browser",
+          "Dockerfile.sandbox-common",
+          "docker-compose.yml",
+          "fly.toml",
+          "fly.private.toml",
+          "render.yaml",
+          "openclaw.podman.env",
+          "docker-setup.sh",
+          "setup-podman.sh"
+        ]
+      },
+      {
+        "id": "root-file-pruning",
+        "status": "active",
+        "description": "Removed obsolete root files for minimalism.",
+        "paths": [".mailmap", ".prettierignore", ".jscpd.json", "assets/avatar-placeholder.svg"]
+      }
+    ]
+  },
+  "syncClassificationRules": [
+    {
+      "name": "fork-owned-structure",
+      "matchPrefixes": [
+        "config/dev/",
+        "config/fork/",
+        "deploy/",
+        "docs/policy/",
+        "docs/reference/acp-bridge.md"
+      ],
+      "action": "manual-replay",
+      "reason": "Fork-owned layout and policy assets."
+    },
+    {
+      "name": "root-compat-entrypoints",
+      "matchExact": [
+        "Dockerfile",
+        "Dockerfile.sandbox",
+        "Dockerfile.sandbox-browser",
+        "Dockerfile.sandbox-common",
+        "docker-compose.yml",
+        "fly.toml",
+        "fly.private.toml",
+        "render.yaml",
+        "openclaw.podman.env",
+        "docker-setup.sh",
+        "setup-podman.sh"
+      ],
+      "action": "manual-replay",
+      "reason": "Compatibility entrypoints in fork; do not blindly overwrite from upstream."
+    },
+    {
+      "name": "core-runtime",
+      "matchPrefixes": ["src/", "extensions/", "apps/", "ui/", "test/", "scripts/"],
+      "action": "curated-cherry-pick",
+      "reason": "Primary feature surface. Pull selectively with tests."
+    },
+    {
+      "name": "default",
+      "action": "review",
+      "reason": "Needs human review before sync."
+    }
+  ]
+}
