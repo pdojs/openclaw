@@ -398,21 +398,27 @@ jobs:
         with:
           submodules: false
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
+      - name: Verify Python runtime on self-hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v python3 >/dev/null 2>&1; then
+            echo "::error::python3 is required on the self-hosted runner for skills-python."
+            echo "Install Python 3.12+ and retry."
+            exit 1
+          fi
+          python3 --version
 
       - name: Install Python tooling
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install pytest ruff pyyaml
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pytest ruff pyyaml
 
       - name: Lint Python skill scripts
-        run: python -m ruff check skills
+        run: python3 -m ruff check skills
 
       - name: Test skill Python scripts
-        run: python -m pytest -q skills
+        run: python3 -m pytest -q skills
 
   secrets:
     runs-on: [self-hosted, macOS, ARM64]
