@@ -16,7 +16,7 @@ jobs:
   # Detect docs-only changes to skip heavy jobs (test, build, Windows, macOS, Android).
   # Lint and format always run. Fail-safe: if detection fails, run everything.
   docs-scope:
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     outputs:
       docs_only: ${{ steps.check.outputs.docs_only }}
       docs_changed: ${{ steps.check.outputs.docs_changed }}
@@ -403,7 +403,7 @@ jobs:
         run: python -m pytest -q skills
 
   secrets:
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
