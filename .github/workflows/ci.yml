@@ -635,7 +635,8 @@ jobs:
   macos:
     needs: [docs-scope, changed-scope, check]
     if: github.event_name == 'pull_request' && needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_macos == 'true'
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -649,8 +650,11 @@ jobs:
 
       # --- Run all checks sequentially (fast gates first) ---
       - name: TS tests (macOS)
+        timeout-minutes: 30
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+          OPENCLAW_TEST_PROFILE: low
+          OPENCLAW_TEST_SERIAL_GATEWAY: "1"
         run: pnpm test
 
       # --- Xcode/Swift setup ---
