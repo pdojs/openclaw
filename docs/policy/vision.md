@@ -57,8 +57,8 @@ Core stays lean; optional capability should usually ship as plugins.
 Preferred plugin path is npm package distribution plus local extension loading for development.
 If you build a plugin, host and maintain it in your own repository.
 The bar for adding optional plugins to core is intentionally high.
-Plugin docs: [`docs/tools/plugin.md`](docs/tools/plugin.md)
-Community plugin listing + PR bar: https://docs.openclaw.ai/plugins/community
+Plugin docs: [Plugins](/tools/plugin)
+Community plugin listing + PR bar: [https://docs.openclaw.ai/plugins/community](https://docs.openclaw.ai/plugins/community)
 
 Memory is a special plugin slot where only one memory plugin can be active at a time.
 Today we ship multiple memory options; over time we plan to converge on one recommended default path.
@@ -71,7 +71,7 @@ Core skill additions should be rare and require a strong product or security rea
 
 ### MCP Support
 
-OpenClaw supports MCP through `mcporter`: https://github.com/steipete/mcporter
+OpenClaw supports MCP through `mcporter`: [https://github.com/steipete/mcporter](https://github.com/steipete/mcporter)
 
 This keeps MCP integration flexible and decoupled from core runtime:
 

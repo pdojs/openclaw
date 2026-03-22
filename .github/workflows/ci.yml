@@ -13,10 +13,10 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  # Detect docs-only changes to skip heavy jobs (test, build, Windows, macOS, Android).
+  # Detect docs-only changes to skip heavy jobs (test, build, macOS).
   # Lint and format always run. Fail-safe: if detection fails, run everything.
   docs-scope:
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     outputs:
       docs_only: ${{ steps.check.outputs.docs_only }}
       docs_changed: ${{ steps.check.outputs.docs_changed }}
@@ -43,7 +43,7 @@ jobs:
   changed-scope:
     needs: [docs-scope]
     if: needs.docs-scope.outputs.docs_only != 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     outputs:
       run_node: ${{ steps.scope.outputs.run_node }}
       run_macos: ${{ steps.scope.outputs.run_macos }}
@@ -81,7 +81,7 @@ jobs:
   changed-extensions:
     needs: [docs-scope, changed-scope]
     if: needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_node == 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     outputs:
       has_changed_extensions: ${{ steps.changed.outputs.has_changed_extensions }}
       changed_extensions_matrix: ${{ steps.changed.outputs.changed_extensions_matrix }}
@@ -126,7 +126,7 @@ jobs:
   build-artifacts:
     needs: [docs-scope, changed-scope]
     if: github.event_name == 'push' && needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_node == 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -160,7 +160,7 @@ jobs:
   release-check:
     needs: [docs-scope, build-artifacts]
     if: github.event_name == 'push' && needs.docs-scope.outputs.docs_only != 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -185,7 +185,7 @@ jobs:
   checks:
     needs: [docs-scope, changed-scope]
     if: needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_node == 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     strategy:
       fail-fast: false
       matrix:
@@ -253,7 +253,7 @@ jobs:
     name: "extension-fast (${{ matrix.extension }})"
     needs: [docs-scope, changed-scope, changed-extensions]
     if: needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_node == 'true' && needs.changed-extensions.outputs.has_changed_extensions == 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.changed-extensions.outputs.changed_extensions_matrix) }}
@@ -270,14 +270,26 @@ jobs:
           use-sticky-disk: "false"
 
       - name: Run changed extension tests
-        run: pnpm test:extension ${{ matrix.extension }}
+        env:
+          EXTENSION_ID: ${{ matrix.extension }}
+        run: |
+          set -euo pipefail
+          case "$EXTENSION_ID" in
+            [A-Za-z0-9._-]*)
+              pnpm test:extension "$EXTENSION_ID"
+              ;;
+            *)
+              echo "::error::Invalid extension id: $EXTENSION_ID"
+              exit 1
+              ;;
+          esac
 
   # Types, lint, and format check.
   check:
     name: "check"
     needs: [docs-scope, changed-scope]
     if: needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_node == 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -303,7 +315,7 @@ jobs:
     name: "startup-memory"
     needs: [docs-scope, changed-scope]
     if: needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_node == 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -326,7 +338,7 @@ jobs:
   check-docs:
     needs: [docs-scope]
     if: needs.docs-scope.outputs.docs_changed == 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -346,7 +358,7 @@ jobs:
     name: "compat-node22"
     needs: [docs-scope, changed-scope]
     if: github.event_name == 'push' && needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_node == 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -379,31 +391,37 @@ jobs:
   skills-python:
     needs: [docs-scope, changed-scope]
     if: needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_skills_python == 'true'
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           submodules: false
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
+      - name: Verify Python runtime on self-hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v python3 >/dev/null 2>&1; then
+            echo "::error::python3 is required on the self-hosted runner for skills-python."
+            echo "Install Python 3.12+ and retry."
+            exit 1
+          fi
+          python3 --version
 
       - name: Install Python tooling
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install pytest ruff pyyaml
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pytest ruff pyyaml
 
       - name: Lint Python skill scripts
-        run: python -m ruff check skills
+        run: python3 -m ruff check .github/skills
 
       - name: Test skill Python scripts
-        run: python -m pytest -q skills
+        run: python3 -m pytest -q .github/skills
 
   secrets:
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: [self-hosted, macOS, ARM64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -423,30 +441,46 @@ jobs:
           use-sticky-disk: "false"
           install-deps: "false"
 
-      - name: Setup Python
-        id: setup-python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: "pip"
-          cache-dependency-path: |
-            pyproject.toml
-            .pre-commit-config.yaml
-            .github/workflows/ci.yml
+      - name: Verify Python runtime on self-hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v python3 >/dev/null 2>&1; then
+            echo "::error::python3 is required on the self-hosted runner for the secrets job."
+            echo "Install Python 3.12+ and retry."
+            exit 1
+          fi
+          python3 --version
+
+      - name: Compute pre-commit config hash
+        id: precommit-hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f .pre-commit-config.yaml ]; then
+            if command -v shasum >/dev/null 2>&1; then
+              value="$(shasum -a 256 .pre-commit-config.yaml | awk '{print $1}')"
+            else
+              value="$(sha256sum .pre-commit-config.yaml | awk '{print $1}')"
+            fi
+          else
+            value="no-precommit-config"
+          fi
+          echo "value=$value" >> "$GITHUB_OUTPUT"
 
       - name: Restore pre-commit cache
         uses: actions/cache@v5
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: pre-commit-${{ runner.os }}-py312-${{ steps.precommit-hash.outputs.value }}
 
       - name: Install pre-commit
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install pre-commit
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pre-commit
 
       - name: Detect committed private keys
-        run: pre-commit run --all-files detect-private-key
+        run: python3 -m pre_commit run --all-files detect-private-key
 
       - name: Audit changed GitHub workflows with zizmor
         run: |
@@ -464,14 +498,14 @@ jobs:
             exit 0
           fi
 
-          pre-commit run zizmor --files "${workflow_files[@]}"
+          python3 -m pre_commit run zizmor --files "${workflow_files[@]}"
 
       - name: Audit production dependencies
-        run: pre-commit run --all-files pnpm-audit-prod
+        run: python3 -m pre_commit run --all-files pnpm-audit-prod
 
   checks-windows:
     needs: [docs-scope, changed-scope]
-    if: needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_windows == 'true'
+    if: false # Deprecated in this fork (Linux/macOS/iOS focus).
     runs-on: blacksmith-32vcpu-windows-2025
     timeout-minutes: 45
     env:
@@ -601,7 +635,8 @@ jobs:
   macos:
     needs: [docs-scope, changed-scope, check]
     if: github.event_name == 'pull_request' && needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_macos == 'true'
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -615,8 +650,11 @@ jobs:
 
       # --- Run all checks sequentially (fast gates first) ---
       - name: TS tests (macOS)
+        timeout-minutes: 30
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+          OPENCLAW_TEST_PROFILE: low
+          OPENCLAW_TEST_SERIAL_GATEWAY: "1"
         run: pnpm test
 
       # --- Xcode/Swift setup ---
@@ -636,8 +674,8 @@ jobs:
 
       - name: Swift lint
         run: |
-          swiftlint --config .swiftlint.yml
-          swiftformat --lint apps/macos/Sources --config .swiftformat
+          swiftlint --config config/dev/swiftlint.yml
+          swiftformat --lint apps/macos/Sources --config config/dev/swiftformat
 
       - name: Cache SwiftPM
         uses: actions/cache@v5
@@ -833,7 +871,7 @@ jobs:
 
   android:
     needs: [docs-scope, changed-scope]
-    if: needs.docs-scope.outputs.docs_only != 'true' && needs.changed-scope.outputs.run_android == 'true'
+    if: false # Deprecated in this fork (Linux/macOS/iOS focus).
     runs-on: blacksmith-16vcpu-ubuntu-2404
     strategy:
       fail-fast: false

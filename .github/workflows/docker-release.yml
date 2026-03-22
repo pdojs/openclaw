@@ -10,7 +10,7 @@ on:
       - "docs/**"
       - "**/*.md"
       - "**/*.mdx"
-      - ".agents/**"
+      - ".github/agents/**"
       - "skills/**"
   workflow_dispatch:
     inputs:

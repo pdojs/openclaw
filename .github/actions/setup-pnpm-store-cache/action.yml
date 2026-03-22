@@ -50,12 +50,28 @@ runs:
       shell: bash
       run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
+    - name: Compute pnpm lock hash
+      id: lockhash
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -f pnpm-lock.yaml ]; then
+          if command -v shasum >/dev/null 2>&1; then
+            value="$(shasum -a 256 pnpm-lock.yaml | awk '{print $1}')"
+          else
+            value="$(sha256sum pnpm-lock.yaml | awk '{print $1}')"
+          fi
+        else
+          value="no-lockfile"
+        fi
+        echo "value=$value" >> "$GITHUB_OUTPUT"
+
     - name: Mount pnpm store sticky disk
       # Keep persistent sticky-disk state off untrusted PR runs.
       if: inputs.use-sticky-disk == 'true' && github.event_name != 'pull_request'
       uses: useblacksmith/stickydisk@v1
       with:
-        key: ${{ github.repository }}-pnpm-store-${{ runner.os }}-${{ github.ref_name }}-${{ inputs.cache-key-suffix }}-${{ hashFiles('pnpm-lock.yaml') }}
+        key: ${{ github.repository }}-pnpm-store-${{ runner.os }}-${{ github.ref_name }}-${{ inputs.cache-key-suffix }}-${{ steps.lockhash.outputs.value }}
         path: ${{ steps.pnpm-store.outputs.path }}
 
     - name: Restore pnpm store cache (exact key only)
@@ -64,13 +80,13 @@ runs:
       uses: actions/cache@v5
       with:
         path: ${{ steps.pnpm-store.outputs.path }}
-        key: ${{ runner.os }}-pnpm-store-${{ inputs.cache-key-suffix }}-${{ hashFiles('pnpm-lock.yaml') }}
+        key: ${{ runner.os }}-pnpm-store-${{ inputs.cache-key-suffix }}-${{ steps.lockhash.outputs.value }}
 
     - name: Restore pnpm store cache (with fallback keys)
       if: inputs.use-actions-cache == 'true' && (inputs.use-sticky-disk != 'true' || github.event_name == 'pull_request') && inputs.use-restore-keys == 'true'
       uses: actions/cache@v5
       with:
         path: ${{ steps.pnpm-store.outputs.path }}
-        key: ${{ runner.os }}-pnpm-store-${{ inputs.cache-key-suffix }}-${{ hashFiles('pnpm-lock.yaml') }}
+        key: ${{ runner.os }}-pnpm-store-${{ inputs.cache-key-suffix }}-${{ steps.lockhash.outputs.value }}
         restore-keys: |
           ${{ runner.os }}-pnpm-store-${{ inputs.cache-key-suffix }}-

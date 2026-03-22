@@ -61,6 +61,8 @@ function resolveWatchPaths(workspaceDir: string, config?: OpenClawConfig): strin
   if (workspaceDir.trim()) {
     paths.push(path.join(workspaceDir, "skills"));
     paths.push(path.join(workspaceDir, ".agents", "skills"));
+    paths.push(path.join(workspaceDir, ".github", "skills"));
+    paths.push(path.join(workspaceDir, ".github", "agents", "skills"));
   }
   paths.push(path.join(CONFIG_DIR, "skills"));
   paths.push(path.join(os.homedir(), ".agents", "skills"));

@@ -141,7 +141,7 @@
   - changed-files:
       - any-glob-to-any-file:
           - "docs/**"
-          - "docs.acp.md"
+          - "docs/reference/acp-bridge.md"
 
 "cli":
   - changed-files:

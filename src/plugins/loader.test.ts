@@ -2190,7 +2190,7 @@ module.exports = {
           label: "Setup Runtime Not Preferred Test",
           selectionLabel: "Setup Runtime Not Preferred Test",
           docsPath: "/channels/setup-runtime-not-preferred-test",
-          blurb: "full entry should still load without explicit startup opt-in",
+          blurb: "full entry should still load when channel config is meaningful",
         },
         capabilities: { chatTypes: ["direct"] },
         config: {
@@ -2235,6 +2235,7 @@ module.exports = {
         channels: {
           "setup-runtime-not-preferred-test": {
             enabled: true,
+            token: "configured",
           },
         },
         plugins: {
